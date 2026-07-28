@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Warm Reach</title>
+    <link rel="stylesheet" href="/dashboard/assets/dashboard.css">
+  </head>
+  <body>
+    <noscript>This dashboard requires JavaScript.</noscript>
+    <div class="app-shell">
+      <header class="app-header">
+        <div class="brand" aria-label="Warm Reach">
+          <span class="brand-mark" aria-hidden="true">WR</span>
+          <span class="brand-name">Warm Reach</span>
+        </div>
+        <div class="header-actions">
+          <span class="sync-status" id="sync-status" role="status">Loading</span>
+          <button class="command-button" id="refresh-button" type="button">Refresh</button>
+        </div>
+      </header>
+
+      <main class="main-content">
+        <section class="page-heading" aria-labelledby="asks-heading">
+          <div>
+            <p class="eyebrow">Personal outreach</p>
+            <h1 id="asks-heading">Referral asks</h1>
+          </div>
+          <div class="filter-row" aria-label="Referral ask filters">
+            <label class="filter-control">
+              <span>Search</span>
+              <input id="search-input" type="search" placeholder="Person, company, or role" autocomplete="off">
+            </label>
+            <label class="filter-control status-filter-control">
+              <span>Status</span>
+              <select id="status-filter">
+                <option value="">All statuses</option>
+              </select>
+            </label>
+            <button class="command-button primary-command" id="new-ask-button" type="button">New ask</button>
+          </div>
+        </section>
+
+        <section class="metric-grid" id="metric-grid" aria-label="Pipeline overview"></section>
+
+        <section class="dashboard-grid">
+          <section class="data-panel applications-panel" aria-labelledby="ask-list-heading">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Outreach queue</p>
+                <h2 id="ask-list-heading">Referral asks</h2>
+              </div>
+              <span class="result-count" id="result-count"></span>
+            </div>
+            <div class="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th scope="col">Person</th>
+                    <th scope="col">Referral context</th>
+                    <th scope="col">Relationship</th>
+                    <th scope="col">Follow-up</th>
+                    <th scope="col">Status</th>
+                  </tr>
+                </thead>
+                <tbody id="applications-body"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <aside class="right-rail" aria-label="Follow-ups and activity">
+            <section class="data-panel reply-panel" aria-labelledby="reply-heading">
+              <div class="panel-heading compact-heading">
+                <div>
+                  <p class="eyebrow">Inbox triage</p>
+                  <h2 id="reply-heading">Possible replies</h2>
+                </div>
+              </div>
+              <ol class="reply-list" id="reply-list"></ol>
+            </section>
+
+            <section class="data-panel queue-panel" aria-labelledby="followup-heading">
+              <div class="panel-heading compact-heading">
+                <div>
+                  <p class="eyebrow">Next touches</p>
+                  <h2 id="followup-heading">Gentle follow-ups</h2>
+                </div>
+              </div>
+              <ul class="followup-list" id="followup-list"></ul>
+            </section>
+
+            <section class="data-panel activity-panel" aria-labelledby="activity-heading">
+              <div class="panel-heading compact-heading">
+                <div>
+                  <p class="eyebrow">Relationship history</p>
+                  <h2 id="activity-heading">Recent outreach</h2>
+                </div>
+              </div>
+              <ol class="timeline-list" id="timeline-list"></ol>
+            </section>
+          </aside>
+        </section>
+      </main>
+    </div>
+    <dialog class="ask-dialog" id="ask-dialog" aria-labelledby="ask-dialog-title">
+      <form class="ask-form" id="ask-form">
+        <div class="dialog-heading">
+          <div>
+            <p class="eyebrow">Personal outreach</p>
+            <h2 id="ask-dialog-title">New referral ask</h2>
+          </div>
+          <button class="dialog-close" id="close-dialog-button" type="button" aria-label="Close new referral ask form">Close</button>
+        </div>
+        <div class="form-grid">
+          <label class="form-control">
+            <span>Person</span>
+            <input name="contact_name" required autocomplete="name">
+          </label>
+          <label class="form-control">
+            <span>Email</span>
+            <input name="contact_email" type="email" required autocomplete="email">
+          </label>
+          <label class="form-control">
+            <span>Target organization</span>
+            <input name="company" autocomplete="organization">
+          </label>
+          <label class="form-control">
+            <span>Opportunity</span>
+            <input name="opportunity" placeholder="Role, team, or introduction">
+          </label>
+          <label class="form-control full-width">
+            <span>How you know them</span>
+            <textarea name="relationship_context" rows="3"></textarea>
+          </label>
+          <label class="form-control full-width">
+            <span>Context for the ask</span>
+            <textarea name="ask_context" rows="3"></textarea>
+          </label>
+          <label class="form-control">
+            <span>Follow-up date</span>
+            <input name="next_followup_at" type="date">
+          </label>
+        </div>
+        <p class="form-status" id="form-status" role="status"></p>
+        <div class="dialog-actions">
+          <button class="command-button" id="cancel-dialog-button" type="button">Cancel</button>
+          <button class="command-button primary-command" type="submit">Save ask</button>
+        </div>
+      </form>
+    </dialog>
+    <script src="/dashboard/assets/dashboard.js"></script>
+  </body>
+</html>
