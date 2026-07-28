@@ -1,0 +1,147 @@
+{
+  "name": "06 Daily Report",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "30 8 * * *"
+            }
+          ]
+        }
+      },
+      "id": "daily-schedule",
+      "name": "Morning Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -800,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.WORKER_BASE_URL}}/crm/daily-report",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={}"
+      },
+      "id": "daily-fetch",
+      "name": "Fetch CRM Snapshot",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -560,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "jsCode": "const prompt = `Generate a concise morning recruiting report. Do not invent counts, dates, or statuses. Use this CRM snapshot JSON only: ${JSON.stringify($json)}`;\nreturn [{ json: { snapshot: $json, prompt } }];"
+      },
+      "id": "daily-prompt",
+      "name": "Build Report Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -320,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.OLLAMA_BASE_URL}}/api/generate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"model\":\"{{$env.OLLAMA_CHAT_MODEL}}\",\"prompt\":{{$json.prompt.toJsonString()}},\"stream\":false}"
+      },
+      "id": "daily-generate",
+      "name": "Generate Report",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -80,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 10000
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{$env.SMTP_FROM_EMAIL}}",
+        "toEmail": "={{$env.SMTP_FROM_EMAIL}}",
+        "subject": "Daily recruiting report",
+        "text": "={{$json.response}}"
+      },
+      "id": "daily-email",
+      "name": "Email Report",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        160,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    }
+  ],
+  "connections": {
+    "Morning Schedule": {
+      "main": [
+        [
+          {
+            "node": "Fetch CRM Snapshot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch CRM Snapshot": {
+      "main": [
+        [
+          {
+            "node": "Build Report Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Report Prompt": {
+      "main": [
+        [
+          {
+            "node": "Generate Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Report": {
+      "main": [
+        [
+          {
+            "node": "Email Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

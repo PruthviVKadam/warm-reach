@@ -1,0 +1,234 @@
+{
+  "name": "05 Reminder Engine",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * *"
+            }
+          ]
+        }
+      },
+      "id": "reminder-schedule",
+      "name": "Daily Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -800,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.WORKER_BASE_URL}}/crm/followup-candidates",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={}"
+      },
+      "id": "reminder-fetch-candidates",
+      "name": "Fetch Follow-up Candidates",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -560,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "jsCode": "const candidates = $json.candidates || [];\nreturn candidates.map(candidate => ({ json: candidate }));"
+      },
+      "id": "reminder-split",
+      "name": "Split Candidates",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -320,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.WORKER_BASE_URL}}/follow-up",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"last_sent_at\":\"{{$json.last_sent_at}}\"}"
+      },
+      "id": "reminder-recommend",
+      "name": "Recommend Follow-up",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -80,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "jsCode": "const candidates = $items('Split Candidates');\nreturn $input.all().map((item, index) => ({ json: { ...(candidates[index]?.json || {}), ...item.json } }));"
+      },
+      "id": "reminder-merge",
+      "name": "Merge Recommendation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        160,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.action}}",
+              "operation": "equal",
+              "value2": "suggest_follow_up"
+            }
+          ]
+        }
+      },
+      "id": "reminder-if",
+      "name": "Needs Follow-up",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        400,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.WORKER_BASE_URL}}/crm/followup",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"application_id\":\"{{$json.application_id}}\",\"recruiter_id\":\"{{$json.recruiter_id}}\",\"email_id\":\"{{$json.email_id}}\",\"followup_type\":\"{{$json.followup_type}}\",\"due_at\":\"{{$json.due_at}}\",\"reason\":\"{{$json.reason}}\"}"
+      },
+      "id": "reminder-store",
+      "name": "Store Follow-up",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        640,
+        -80
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{$env.SMTP_FROM_EMAIL}}",
+        "toEmail": "={{$env.SMTP_FROM_EMAIL}}",
+        "subject": "=Follow-up suggested: {{$json.company}}",
+        "text": "={{$json.reason}}"
+      },
+      "id": "reminder-notify",
+      "name": "Notify Follow-up",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        880,
+        -80
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    }
+  ],
+  "connections": {
+    "Daily Schedule": {
+      "main": [
+        [
+          {
+            "node": "Fetch Follow-up Candidates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Follow-up Candidates": {
+      "main": [
+        [
+          {
+            "node": "Split Candidates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Candidates": {
+      "main": [
+        [
+          {
+            "node": "Recommend Follow-up",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recommend Follow-up": {
+      "main": [
+        [
+          {
+            "node": "Merge Recommendation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Recommendation": {
+      "main": [
+        [
+          {
+            "node": "Needs Follow-up",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs Follow-up": {
+      "main": [
+        [
+          {
+            "node": "Store Follow-up",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store Follow-up": {
+      "main": [
+        [
+          {
+            "node": "Notify Follow-up",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

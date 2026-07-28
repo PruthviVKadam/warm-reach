@@ -1,0 +1,204 @@
+{
+  "name": "04 CRM Updates",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "jsonExample",
+        "jsonExample": "{\n  \"application_date\": \"2026-07-27\",\n  \"careers_url\": \"https://jpmorganchase.com/careers\",\n  \"company\": \"JPMorgan Chase & Co.\",\n  \"confidence\": \"high\",\n  \"job_id\": \"210770939\",\n  \"job_title\": \"Data Scientist [Multiple Positions Available]\",\n  \"location\": \"\",\n  \"type\": \"full-time\"\n}"
+      },
+      "id": "crm-trigger",
+      "name": "Workflow Input",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -800,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.company}}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "crm-company-provided",
+      "name": "Company Provided",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -560,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.WORKER_BASE_URL}}/crm/init",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={}"
+      },
+      "id": "crm-init",
+      "name": "Initialize CRM",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -560,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.WORKER_BASE_URL}}/crm/application",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"company\":\"{{$items('Workflow Input')[0].json.company}}\",\"job_title\":\"{{$items('Workflow Input')[0].json.job_title}}\",\"job_id\":\"{{$items('Workflow Input')[0].json.job_id}}\",\"location\":\"{{$items('Workflow Input')[0].json.location}}\",\"careers_url\":\"{{$items('Workflow Input')[0].json.careers_url}}\",\"application_date\":\"{{$items('Workflow Input')[0].json.application_date}}\",\"status\":\"submitted\"}"
+      },
+      "id": "crm-upsert-application",
+      "name": "Upsert Application",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -320,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.WORKER_BASE_URL}}/crm/timeline",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"application_id\":\"{{$items('Upsert Application')[0].json.application_id}}\",\"event_key\":\"{{$items('Upsert Application')[0].json.application_id}}:confirmation_received\",\"event_type\":\"confirmation_received\",\"title\":\"Confirmation Received\",\"details\":{\"company\":\"{{$items('Workflow Input')[0].json.company}}\",\"job_title\":\"{{$items('Workflow Input')[0].json.job_title}}\"}}"
+      },
+      "id": "crm-timeline",
+      "name": "Record Timeline",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -80,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.WORKER_BASE_URL}}/crm/queue-embedding",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"source_table\":\"applications\",\"source_id\":\"{{$items('Upsert Application')[0].json.application_id}}\",\"text\":\"{{$items('Workflow Input')[0].json.company}} {{$items('Workflow Input')[0].json.job_title}} {{$items('Workflow Input')[0].json.location}} {{$items('Workflow Input')[0].json.careers_url}}\"}"
+      },
+      "id": "crm-queue-embedding",
+      "name": "Queue Embedding",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        160,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $items('Workflow Input')[0].json;\nconst app = $items('Upsert Application')[0].json;\nreturn [{ json: { ...input, application_id: app.application_id } }];"
+      },
+      "id": "crm-return-context",
+      "name": "Return CRM Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Workflow Input": {
+      "main": [
+        [
+          {
+            "node": "Company Provided",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Company Provided": {
+      "main": [
+        [
+          {
+            "node": "Initialize CRM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Initialize CRM": {
+      "main": [
+        [
+          {
+            "node": "Upsert Application",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert Application": {
+      "main": [
+        [
+          {
+            "node": "Record Timeline",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record Timeline": {
+      "main": [
+        [
+          {
+            "node": "Queue Embedding",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Queue Embedding": {
+      "main": [
+        [
+          {
+            "node": "Return CRM Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

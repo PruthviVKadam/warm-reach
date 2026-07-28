@@ -1,0 +1,272 @@
+{
+  "name": "01 Email Monitoring",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "simple": false,
+        "filters": {
+          "readStatus": "unread"
+        }
+      },
+      "id": "email-monitoring-gmail-trigger",
+      "name": "Gmail Trigger",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -800,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.WORKER_BASE_URL}}/classify",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"subject\":\"{{$json.subject || ''}}\",\"body\":\"{{$json.textPlain || $json.textHtml || ''}}\",\"received_at\":\"{{$json.date || $now}}\"}"
+      },
+      "id": "email-monitoring-classify",
+      "name": "Classify Email",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -560,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.type}}",
+              "operation": "notEqual",
+              "value2": "newsletter"
+            },
+            {
+              "value1": "={{$json.type}}",
+              "operation": "notEqual",
+              "value2": "unknown"
+            }
+          ]
+        },
+        "combineOperation": "all"
+      },
+      "id": "email-monitoring-filter",
+      "name": "Ignore Newsletters",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -320,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.company}}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "email-monitoring-company-identified",
+      "name": "Company Identified",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -80,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": "04 CRM Updates",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "email-monitoring-save-application",
+      "name": "Save Application",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [
+        -80,
+        -80
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "workflowId": "02 Recruiter Research",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "email-monitoring-research",
+      "name": "Research Recruiters",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [
+        160,
+        -80
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 10000
+    },
+    {
+      "parameters": {
+        "workflowId": "03 Email Drafting",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "email-monitoring-draft",
+      "name": "Draft Email For Approval",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.1,
+      "position": [
+        400,
+        -80
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 10000
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{$env.SMTP_FROM_EMAIL}}",
+        "toEmail": "={{$env.SMTP_FROM_EMAIL}}",
+        "subject": "=Draft ready: {{$json.company}} {{$json.job_title}}",
+        "text": "=A recruiting draft is ready for review in Gmail drafts. Company: {{$json.company}}. Job: {{$json.job_title}}. Recruiter reasoning: {{$json.score_explanation || 'No score explanation returned.'}}"
+      },
+      "id": "email-monitoring-notify",
+      "name": "Notify Me",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        640,
+        -80
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    }
+  ],
+  "connections": {
+    "Gmail Trigger": {
+      "main": [
+        [
+          {
+            "node": "Classify Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify Email": {
+      "main": [
+        [
+          {
+            "node": "Ignore Newsletters",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ignore Newsletters": {
+      "main": [
+        [
+          {
+            "node": "Company Identified",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Company Identified": {
+      "main": [
+        [
+          {
+            "node": "Save Application",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Application": {
+      "main": [
+        [
+          {
+            "node": "Research Recruiters",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Research Recruiters": {
+      "main": [
+        [
+          {
+            "node": "Draft Email For Approval",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Draft Email For Approval": {
+      "main": [
+        [
+          {
+            "node": "Notify Me",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {
+    "Company Identified": [
+      {
+        "json": {
+          "application_date": "2026-07-27",
+          "careers_url": "[https://jpmorganchase.com/careers](https://jpmorganchase.com/careers)",
+          "company": "JPMorgan Chase & Co.",
+          "confidence": "high",
+          "job_id": "210770939",
+          "job_title": "Data Scientist [Multiple Positions Available]",
+          "location": "",
+          "type": "full-time"
+        }
+      }
+    ]
+  }
+}

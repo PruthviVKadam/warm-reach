@@ -1,0 +1,320 @@
+{
+  "name": "03 Email Drafting",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "draft-trigger",
+      "name": "Workflow Input",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [
+        -800,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.WORKER_BASE_URL}}/rag/search",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"query\":\"{{$items('Workflow Input')[0].json.company}} {{$items('Workflow Input')[0].json.job_title}} {{$items('Workflow Input')[0].json.best_recruiter.profile.role || ''}}\",\"limit\":5}"
+      },
+      "id": "draft-retrieve-memory",
+      "name": "Retrieve Memory",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -560,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 10000
+    },
+    {
+      "parameters": {
+        "jsCode": "const original = $items('Workflow Input')[0].json;\nconst memories = $json.matches || [];\nconst recruiter = original.best_recruiter || {};\nconst profile = recruiter.profile || {};\nconst memoryContext = JSON.stringify(memories).slice(0, 3000);\nconst facts = `Company: ${original.company || ''}\\nJob title: ${original.job_title || ''}\\nRecruiter: ${profile.name || ''}\\nRecruiter role: ${profile.role || ''}\\nRetrieved context: ${memoryContext}`;\nconst guardrail = 'Use only the supplied facts. Never invent experience, metrics, credentials, or a personal relationship.';\nreturn [{ json: { ...original, retrieved_memory: memories, subject_prompt: `${guardrail} Return only a concise email subject, at most 8 words. No label or quotation marks.\\n\\n${facts}`, opening_prompt: `${guardrail} Return only one friendly opening sentence, at most 18 words, expressing interest in the role. No greeting, sign-off, or label.\\n\\n${facts}`, relevant_point_prompt: `${guardrail} Return only one factual sentence, at most 20 words, grounded in retrieved context. If there is no supported point, return exactly NONE. No label.\\n\\n${facts}`, ask_prompt: `${guardrail} Return only one low-friction question asking for a brief conversation, at most 14 words. No greeting, sign-off, or label.\\n\\n${facts}` } }];"
+      },
+      "id": "draft-build-prompt",
+      "name": "Build Email Part Prompts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -520,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.OLLAMA_BASE_URL}}/api/generate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"model\":\"{{$env.OLLAMA_CHAT_MODEL}}\",\"prompt\":{{$items('Build Email Part Prompts')[0].json.subject_prompt.toJsonString()}},\"stream\":false}"
+      },
+      "id": "draft-ollama",
+      "name": "Draft Subject",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -280,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 10000
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.OLLAMA_BASE_URL}}/api/generate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"model\":\"{{$env.OLLAMA_CHAT_MODEL}}\",\"prompt\":{{$items('Build Email Part Prompts')[0].json.opening_prompt.toJsonString()}},\"stream\":false}"
+      },
+      "id": "draft-parse",
+      "name": "Draft Opening",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        160,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 10000
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.OLLAMA_BASE_URL}}/api/generate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"model\":\"{{$env.OLLAMA_CHAT_MODEL}}\",\"prompt\":{{$items('Build Email Part Prompts')[0].json.relevant_point_prompt.toJsonString()}},\"stream\":false}"
+      },
+      "id": "draft-relevant-point",
+      "name": "Draft Relevant Point",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        400,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 10000
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.OLLAMA_BASE_URL}}/api/generate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"model\":\"{{$env.OLLAMA_CHAT_MODEL}}\",\"prompt\":{{$items('Build Email Part Prompts')[0].json.ask_prompt.toJsonString()}},\"stream\":false}"
+      },
+      "id": "draft-call-to-action",
+      "name": "Draft Call To Action",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        640,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 10000
+    },
+    {
+      "parameters": {
+        "jsCode": "const context = $items('Build Email Part Prompts')[0].json;\nconst clean = (value) => String(value || '')\n  .replace(/<think>[\\s\\S]*?<\\/think>/gi, '')\n  .replace(/^(subject|opening|relevant point|call to action)\\s*:\\s*/i, '')\n  .replace(/^[\\\"'`]+|[\\\"'`]+$/g, '')\n  .replace(/\\s+/g, ' ')\n  .trim();\nconst subject = clean($items('Draft Subject')[0].json.response) || `Interest in ${context.job_title || 'the opportunity'}`;\nconst opening = clean($items('Draft Opening')[0].json.response) || `I am writing about the ${context.job_title || 'open'} role at ${context.company || 'your company'}.`;\nconst relevantPoint = clean($items('Draft Relevant Point')[0].json.response);\nconst ask = clean($items('Draft Call To Action')[0].json.response) || 'Would you be open to a brief conversation?';\nconst profile = context.best_recruiter?.profile || {};\nconst firstName = String(profile.name || '').trim().split(/\\s+/)[0];\nconst greeting = firstName ? `Hi ${firstName},` : 'Hello,';\nconst hasRelevantPoint = relevantPoint && !/^(none|n\\/a|no relevant point)\\.?$/i.test(relevantPoint);\nconst draftBody = [greeting, opening, hasRelevantPoint ? relevantPoint : '', ask, 'Best,\\nPruthvi Kadam'].filter(Boolean).join('\\n\\n');\nreturn [{ json: { ...context, draft_subject: subject, draft_body: draftBody, draft_reasoning: 'Fixed boilerplate structure with concise AI-generated subject, opening, optional evidence, and ask.' } }];"
+      },
+      "id": "draft-assemble-boilerplate",
+      "name": "Assemble Boilerplate Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "draft",
+        "operation": "create",
+        "subject": "={{$json.draft_subject}}",
+        "message": "={{$json.draft_body}}",
+        "toList": "={{$json.best_recruiter.profile.public_email || ''}}"
+      },
+      "id": "draft-gmail",
+      "name": "Create Gmail Draft",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1120,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$env.NOTIFICATION_EMAIL || $env.SMTP_FROM_EMAIL || ''}}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "draft-notification-recipient",
+      "name": "Notification Recipient Configured",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1360,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "sendTo": "={{$env.NOTIFICATION_EMAIL || $env.SMTP_FROM_EMAIL || ''}}",
+        "subject": "=Approve draft: {{$json.draft_subject}}",
+        "emailType": "text",
+        "message": "=A Gmail draft was created but not sent. Reasoning: {{$json.draft_reasoning}}",
+        "options": {}
+      },
+      "id": "draft-notify",
+      "name": "Notify For Approval",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1600,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    }
+  ],
+  "connections": {
+    "Workflow Input": {
+      "main": [
+        [
+          {
+            "node": "Retrieve Memory",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retrieve Memory": {
+      "main": [
+        [
+          {
+            "node": "Build Email Part Prompts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Email Part Prompts": {
+      "main": [
+        [
+          {
+            "node": "Draft Subject",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Draft Subject": {
+      "main": [
+        [
+          {
+            "node": "Draft Opening",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Draft Opening": {
+      "main": [
+        [
+          {
+            "node": "Draft Relevant Point",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Draft Relevant Point": {
+      "main": [
+        [
+          {
+            "node": "Draft Call To Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Draft Call To Action": {
+      "main": [
+        [
+          {
+            "node": "Assemble Boilerplate Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Assemble Boilerplate Email": {
+      "main": [
+        [
+          {
+            "node": "Create Gmail Draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Gmail Draft": {
+      "main": [
+        [
+          {
+            "node": "Notification Recipient Configured",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notification Recipient Configured": {
+      "main": [
+        [
+          {
+            "node": "Notify For Approval",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

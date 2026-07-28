@@ -1,0 +1,169 @@
+{
+  "name": "02 Recruiter Research",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "research-trigger",
+      "name": "Workflow Input",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [
+        -800,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const company = $json.company || '';\nconst jobTitle = $json.job_title || '';\nconst location = $json.location || '';\nconst queries = [\n  `site:linkedin.com \"${company}\" recruiter`,\n  `site:linkedin.com \"${company}\" engineering recruiter`,\n  `site:linkedin.com \"${company}\" software recruiter`,\n  `site:linkedin.com \"${company}\" talent acquisition`,\n  `site:linkedin.com \"${company}\" university recruiter`,\n  `site:linkedin.com \"${company}\" hiring manager`,\n  `\"${company}\" recruiting team`,\n  `\"${company}\" engineering manager`,\n  `\"${company}\" talent acquisition`\n];\nreturn queries.map(query => ({ json: { company, job_title: jobTitle, location, query } }));"
+      },
+      "id": "research-build-queries",
+      "name": "Build Search Queries",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -560,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.SEARXNG_BASE_URL}}/search",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "={{$json.query}}"
+            },
+            {
+              "name": "format",
+              "value": "json"
+            },
+            {
+              "name": "language",
+              "value": "en"
+            }
+          ]
+        }
+      },
+      "id": "research-searxng",
+      "name": "Search Public Sources",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -320,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 10000
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $items('Workflow Input')[0].json;\nconst company = input.company || '';\nconst jobTitle = input.job_title || '';\nconst location = input.location || '';\nconst recruiters = [];\nfor (const item of $input.all()) {\n  const results = item.json.results || [];\n  for (const result of results) {\n    const title = result.title || '';\n    const url = result.url || '';\n    const content = result.content || '';\n    const haystack = `${title} ${content}`;\n    if (!/recruiter|talent acquisition|hiring manager|engineering manager|university recruiter/i.test(haystack)) continue;\n    recruiters.push({\n      name: title.split(' - ')[0].trim(),\n      role: title,\n      location,\n      public_email: '',\n      linkedin_url: url.includes('linkedin.com') ? url : '',\n      team: '',\n      experience: content,\n      hiring_area: jobTitle,\n      source_url: url\n    });\n  }\n}\nreturn [{ json: { ...input, company, job_title: jobTitle, location, recruiters } }];"
+      },
+      "id": "research-normalize",
+      "name": "Normalize Public Candidates",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -80,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.WORKER_BASE_URL}}/rank-recruiters",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ company: $json.company || '', job_title: $json.job_title || '', location: $json.location || '', recruiters: $json.recruiters || [] }) }}"
+      },
+      "id": "research-rank",
+      "name": "Rank Recruiters",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        160,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $items('Normalize Public Candidates')[0].json;\nconst ranked = $json.recruiters || [];\nreturn [{ json: { ...input, recruiters: ranked.slice(0, 5), best_recruiter: ranked[0] || null } }];"
+      },
+      "id": "research-return",
+      "name": "Return Top Recruiters",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Workflow Input": {
+      "main": [
+        [
+          {
+            "node": "Build Search Queries",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Search Queries": {
+      "main": [
+        [
+          {
+            "node": "Search Public Sources",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Public Sources": {
+      "main": [
+        [
+          {
+            "node": "Normalize Public Candidates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Public Candidates": {
+      "main": [
+        [
+          {
+            "node": "Rank Recruiters",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rank Recruiters": {
+      "main": [
+        [
+          {
+            "node": "Return Top Recruiters",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}
