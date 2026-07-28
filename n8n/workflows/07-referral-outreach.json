@@ -1,0 +1,210 @@
+{
+  "id": "wreachreferral01",
+  "name": "07 Referral Outreach",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "jsonExample",
+        "jsonExample": "{\n  \"contact_name\": \"Avery Chen\",\n  \"contact_email\": \"avery@example.com\",\n  \"company\": \"Northwind\",\n  \"opportunity\": \"Data Scientist role\",\n  \"relationship_context\": \"NJIT alumni connection\",\n  \"ask_context\": \"Request a referral if they are comfortable\"\n}"
+      },
+      "id": "referral-trigger",
+      "name": "Workflow Input",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [-960, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.WORKER_BASE_URL}}/api/referral-asks",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{JSON.stringify($items('Workflow Input')[0].json)}}"
+      },
+      "id": "referral-save-ask",
+      "name": "Save Referral Ask",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-740, 0],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.WORKER_BASE_URL}}/rag/search",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{JSON.stringify({ query: [$items('Workflow Input')[0].json.company, $items('Workflow Input')[0].json.opportunity, $items('Workflow Input')[0].json.relationship_context].filter(Boolean).join(' '), limit: 5 })}}"
+      },
+      "id": "referral-retrieve-memory",
+      "name": "Retrieve Referral Memory",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-500, 0],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 10000
+    },
+    {
+      "parameters": {
+        "jsCode": "const original = $items('Workflow Input')[0].json;\nconst memories = $json.matches || [];\nconst memoryContext = JSON.stringify(memories).slice(0, 2500);\nconst facts = `Person: ${original.contact_name || ''}\\nCompany: ${original.company || ''}\\nOpportunity: ${original.opportunity || ''}\\nRelationship context: ${original.relationship_context || ''}\\nAsk context: ${original.ask_context || ''}\\nRetrieved context: ${memoryContext}`;\nconst guardrail = 'Use only the supplied facts. Never invent a relationship, shared experience, metric, credential, or referral.';\nreturn [{ json: { ...original, retrieved_memory: memories, subject_prompt: `${guardrail} Return only a personal subject line, at most 7 words. No label or quotation marks.\\n\\n${facts}`, opening_prompt: `${guardrail} Return only one warm opening sentence, at most 16 words. Do not use a greeting, sign-off, or label.\\n\\n${facts}`, context_prompt: `${guardrail} Return one concrete relationship or opportunity sentence, at most 18 words. If unsupported, return exactly NONE. No label.\\n\\n${facts}`, ask_prompt: `${guardrail} Return only one concise, no-pressure referral question, at most 18 words. No greeting, sign-off, or label.\\n\\n${facts}` } }];"
+      },
+      "id": "referral-build-prompts",
+      "name": "Build Referral Email Prompts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-260, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.OLLAMA_BASE_URL}}/api/generate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"model\":\"{{$env.OLLAMA_CHAT_MODEL}}\",\"prompt\":{{$items('Build Referral Email Prompts')[0].json.subject_prompt.toJsonString()}},\"stream\":false}"
+      },
+      "id": "referral-draft-subject",
+      "name": "Draft Referral Subject",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-20, 0],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 10000
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.OLLAMA_BASE_URL}}/api/generate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"model\":\"{{$env.OLLAMA_CHAT_MODEL}}\",\"prompt\":{{$items('Build Referral Email Prompts')[0].json.opening_prompt.toJsonString()}},\"stream\":false}"
+      },
+      "id": "referral-draft-opening",
+      "name": "Draft Referral Opening",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [220, 0],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 10000
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.OLLAMA_BASE_URL}}/api/generate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"model\":\"{{$env.OLLAMA_CHAT_MODEL}}\",\"prompt\":{{$items('Build Referral Email Prompts')[0].json.context_prompt.toJsonString()}},\"stream\":false}"
+      },
+      "id": "referral-draft-context",
+      "name": "Draft Relationship Point",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 0],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 10000
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.OLLAMA_BASE_URL}}/api/generate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"model\":\"{{$env.OLLAMA_CHAT_MODEL}}\",\"prompt\":{{$items('Build Referral Email Prompts')[0].json.ask_prompt.toJsonString()}},\"stream\":false}"
+      },
+      "id": "referral-draft-ask",
+      "name": "Draft Referral Ask",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [700, 0],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 10000
+    },
+    {
+      "parameters": {
+        "jsCode": "const context = $items('Build Referral Email Prompts')[0].json;\nconst clean = (value) => String(value || '')\n  .replace(/<think>[\\s\\S]*?<\\/think>/gi, '')\n  .replace(/^(subject|opening|relationship point|referral ask)\\s*:\\s*/i, '')\n  .replace(/^[\\\"'`]+|[\\\"'`]+$/g, '')\n  .replace(/\\s+/g, ' ')\n  .trim();\nconst subject = clean($items('Draft Referral Subject')[0].json.response) || 'Quick referral question';\nconst opening = clean($items('Draft Referral Opening')[0].json.response) || 'I hope you are doing well.';\nconst relationshipPoint = clean($items('Draft Relationship Point')[0].json.response);\nconst ask = clean($items('Draft Referral Ask')[0].json.response) || 'Would you be comfortable referring me if it feels appropriate?';\nconst firstName = String(context.contact_name || '').trim().split(/\\s+/)[0];\nconst greeting = firstName ? `Hi ${firstName},` : 'Hello,';\nconst hasRelationshipPoint = relationshipPoint && !/^(none|n\\/a|no relationship point)\\.?$/i.test(relationshipPoint);\nconst draftBody = [greeting, opening, hasRelationshipPoint ? relationshipPoint : '', ask, 'Best,\\nPruthvi Kadam'].filter(Boolean).join('\\n\\n');\nreturn [{ json: { ...context, draft_subject: subject, draft_body: draftBody, draft_reasoning: 'Fixed boilerplate with concise AI-generated subject, opening, optional relationship point, and referral ask.' } }];"
+      },
+      "id": "referral-assemble-boilerplate",
+      "name": "Assemble Referral Boilerplate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [940, 0]
+    },
+    {
+      "parameters": {
+        "resource": "draft",
+        "operation": "create",
+        "subject": "={{$json.draft_subject}}",
+        "message": "={{$json.draft_body}}",
+        "toList": "={{$json.contact_email}}"
+      },
+      "id": "referral-gmail-draft",
+      "name": "Create Referral Gmail Draft",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [1180, 0],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.WORKER_BASE_URL}}/api/referral-asks/draft",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{JSON.stringify({ referral_ask_id: $items('Save Referral Ask')[0].json.referral_ask.id, draft_subject: $items('Assemble Referral Boilerplate')[0].json.draft_subject, draft_body: $items('Assemble Referral Boilerplate')[0].json.draft_body })}}"
+      },
+      "id": "referral-save-draft",
+      "name": "Save Referral Draft",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1420, 0],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    }
+  ],
+  "connections": {
+    "Workflow Input": {
+      "main": [[{"node": "Save Referral Ask", "type": "main", "index": 0}]]
+    },
+    "Save Referral Ask": {
+      "main": [[{"node": "Retrieve Referral Memory", "type": "main", "index": 0}]]
+    },
+    "Retrieve Referral Memory": {
+      "main": [[{"node": "Build Referral Email Prompts", "type": "main", "index": 0}]]
+    },
+    "Build Referral Email Prompts": {
+      "main": [[{"node": "Draft Referral Subject", "type": "main", "index": 0}]]
+    },
+    "Draft Referral Subject": {
+      "main": [[{"node": "Draft Referral Opening", "type": "main", "index": 0}]]
+    },
+    "Draft Referral Opening": {
+      "main": [[{"node": "Draft Relationship Point", "type": "main", "index": 0}]]
+    },
+    "Draft Relationship Point": {
+      "main": [[{"node": "Draft Referral Ask", "type": "main", "index": 0}]]
+    },
+    "Draft Referral Ask": {
+      "main": [[{"node": "Assemble Referral Boilerplate", "type": "main", "index": 0}]]
+    },
+    "Assemble Referral Boilerplate": {
+      "main": [[{"node": "Create Referral Gmail Draft", "type": "main", "index": 0}]]
+    },
+    "Create Referral Gmail Draft": {
+      "main": [[{"node": "Save Referral Draft", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}
