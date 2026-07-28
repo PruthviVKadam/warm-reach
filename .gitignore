@@ -2,6 +2,9 @@
 .env.*
 !.env.example
 
+# Local session log. Describes live account and workflow wiring.
+context.md
+
 data/
 logs/
 tmp/
